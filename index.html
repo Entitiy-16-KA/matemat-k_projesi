@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Matematik Projesi (Kuş Bakışı)</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Poppins', sans-serif; background: #87CEEB; user-select: none; }
+        #ui-layer {
+            position: absolute; top: 20px; left: 50%;
+            transform: translateX(-50%); width: 85%; 
+            text-align: center; pointer-events: none; z-index: 10;
+        }
+        #question-box {
+            background: rgba(255, 255, 255, 0.95); color: #1b5e20;
+            padding: 15px; border-radius: 20px; font-size: 26px;
+            border: 4px solid #8A2BE2; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            font-weight: 800;
+        }
+        /* WASD BUTONLARI */
+        #controls-wrapper {
+            position: absolute; bottom: 30px; left: 50%;
+            transform: translateX(-50%); display: grid;
+            grid-template-areas: ". w ." "a s d";
+            gap: 10px; z-index: 20;
+        }
+        .control-btn {
+            width: 60px; height: 60px; background: rgba(138, 43, 226, 0.7);
+            color: white; border: 2px solid white; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 20px; cursor: pointer;
+            pointer-events: auto; transition: 0.2s;
+        }
+        .control-btn:active { background: #8A2BE2; transform: scale(0.9); }
+        #btn-w { grid-area: w; } #btn-a { grid-area: a; }
+        #btn-s { grid-area: s; } #btn-d { grid-area: d; }
+
+        #progress-container {
+            width: 300px; height: 15px; background: rgba(0,0,0,0.1);
+            margin: 10px auto; border-radius: 10px; overflow: hidden; border: 2px solid #1b5e20;
+        }
+        #progress-bar { width: 0%; height: 100%; background: #8A2BE2; transition: width 0.5s; }
+        #win-screen {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(138, 43, 226, 0.95); color: white; text-align: center;
+            z-index: 100; flex-direction: column; align-items: center; justify-content: center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <div id="question-box">Yükleniyor...</div>
+    <div id="progress-container"><div id="progress-bar"></div></div>
+</div>
+
+<div id="controls-wrapper">
+    <div id="btn-w" class="control-btn">W</div>
+    <div id="btn-a" class="control-btn">A</div>
+    <div id="btn-s" class="control-btn">S</div>
+    <div id="btn-d" class="control-btn">D</div>
+</div>
+
+<div id="win-screen">
+    <h1>EFSANEVİ BİTİŞ! 🏆</h1>
+    <button onclick="location.reload()" style="padding:15px 30px; cursor:pointer; border-radius:10px;">YENİDEN BAŞLA</button>
+</div>
+
+<script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+
+    let score = 0;
+    const maxScore = 10;
+    let speedMul = 0.35; // Daha yavaş başlangıç
+    let currentQuestion = {};
+    let balls = [];
+    const ARENA_SIZE = 45;
+
+    const questions = [
+        { q: "10/x = 5/4 ise x kaçtır?", a: 8, options: [8, 6, 12, 10] },
+        { q: "2 kg elma 40 TL ise 6 kg kaç TL?", a: 120, options: [120, 80, 100, 160] },
+        { q: "Ters Orantı: 3 kişi 8 günde bitirirse, 6 kişi kaç günde?", a: 4, options: [4, 16, 2, 8] },
+        { q: "Ölçek 1/200. 5 cm gerçekte kaç METRE?", a: 10, options: [10, 100, 1, 20] },
+        { q: "Doğru Orantı: x=3 iken y=9 ise x=7 iken y kaçtır?", a: 21, options: [21, 14, 28, 18] }
+    ];
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 30, 250);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(50, 100, 50);
+    sun.castShadow = true;
+    scene.add(sun);
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshStandardMaterial({ color: 0x4caf50 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const player = new THREE.Group();
+    const pBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 1.2, 4, 12), new THREE.MeshStandardMaterial({ color: 0x8A2BE2 }));
+    pBody.position.y = 1.2;
+    pBody.castShadow = true;
+    player.add(pBody);
+    scene.add(player);
+
+    // Uzun Ağaçlar
+    for(let i=0; i<300; i++) {
+        const tree = new THREE.Group();
+        const h = 20 + Math.random()*25;
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.8, h), new THREE.MeshStandardMaterial({color: 0x4b3621}));
+        trunk.position.y = h/2;
+        const leaves = new THREE.Mesh(new THREE.ConeGeometry(5, 15, 8), new THREE.MeshStandardMaterial({color: 0x1b5e20}));
+        leaves.position.y = h;
+        tree.add(trunk, leaves);
+        tree.position.set(Math.random()*800-400, 0, Math.random()*800-400);
+        if(tree.position.length() < 30) tree.position.x += 40;
+        scene.add(tree);
+    }
+
+    function createBalls() {
+        balls.forEach(b => scene.remove(b));
+        balls = [];
+        currentQuestion.options.forEach((opt, i) => {
+            const group = new THREE.Group();
+            const ball = new THREE.Mesh(
+                new THREE.SphereGeometry(1.6, 32, 32),
+                new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x220000 })
+            );
+            ball.name = "targetBall"; // Tıklama için isim
+            group.add(ball);
+
+            // HD Sayı Yazısı
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 512; canvas.height = 512;
+            ctx.fillStyle = 'white'; ctx.font = 'bold 240px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.shadowColor = "black"; ctx.shadowBlur = 20;
+            ctx.fillText(opt, 256, 256);
+            
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+            sprite.position.y = 3.5; sprite.scale.set(4, 4, 1);
+            sprite.name = "targetBall"; // Yazıya da tıklanabilsin
+            group.add(sprite);
+
+            const dist = 20 + Math.random()*15;
+            const angle = (i / 4) * Math.PI * 2;
+            group.position.set(player.position.x + Math.cos(angle)*dist, 2, player.position.z + Math.sin(angle)*dist);
+            
+            group.userData = { 
+                value: opt, 
+                vel: new THREE.Vector3((Math.random()-0.5), 0, (Math.random()-0.5)).multiplyScalar(0.3),
+                maneuver: 0 
+            };
+            
+            scene.add(group);
+            balls.push(group);
+        });
+    }
+
+    function nextQuestion() {
+        if (score >= maxScore) {
+            document.getElementById('win-screen').style.display = 'flex';
+            return;
+        }
+        currentQuestion = questions[Math.floor(Math.random() * questions.length)];
+        document.getElementById('question-box').innerText = currentQuestion.q;
+        createBalls();
+    }
+
+    // TIKLAMA SİSTEMİ (GELİŞTİRİLDİ)
+    const raycaster = new THREE.Raycaster();
+    const onMouseDown = (e) => {
+        // Butonlara tıklanıyorsa oyun tıklamasını engelle
+        if (e.target.closest('.control-btn')) return;
+
+        const mouse = new THREE.Vector2(
+            (e.clientX / window.innerWidth) * 2 - 1,
+            -(e.clientY / window.innerHeight) * 2 + 1
+        );
+
+        raycaster.setFromCamera(mouse, camera);
+        // Tüm hiyerarşiyi (recursive: true) kontrol et
+        const intersects = raycaster.intersectObjects(balls, true);
+        
+        if(intersects.length > 0) {
+            let hitObject = intersects[0].object;
+            // Grubun içindeki en üst ebeveyne (Group) ulaşana kadar çık
+            let root = hitObject;
+            while (root.parent && !root.userData.value) {
+                root = root.parent;
+            }
+
+            if(root.userData.value === currentQuestion.a) {
+                score++; speedMul += 0.15; nextQuestion();
+            } else {
+                score = Math.max(0, score - 0.5);
+            }
+            document.getElementById('progress-bar').style.width = (score/maxScore*100) + "%";
+        }
+    };
+
+    window.addEventListener('mousedown', onMouseDown);
+
+    // KONTROLLER
+    const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+    const setupBtn = (id, key) => {
+        const btn = document.getElementById(id);
+        btn.onmousedown = btn.ontouchstart = (e) => { e.preventDefault(); keys[key] = true; };
+        btn.onmouseup = btn.onmouseleave = btn.ontouchend = () => keys[key] = false;
+    };
+    setupBtn('btn-w', 'KeyW'); setupBtn('btn-a', 'KeyA');
+    setupBtn('btn-s', 'KeyS'); setupBtn('btn-d', 'KeyD');
+
+    window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.code)) keys[e.code] = true; });
+    window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.code)) keys[e.code] = false; });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const time = Date.now();
+
+        const moveSpeed = 0.5;
+        if (keys.KeyW) { player.position.z -= moveSpeed; player.rotation.y = Math.PI; }
+        if (keys.KeyS) { player.position.z += moveSpeed; player.rotation.y = 0; }
+        if (keys.KeyA) { player.position.x -= moveSpeed; player.rotation.y = -Math.PI/2; }
+        if (keys.KeyD) { player.position.x += moveSpeed; player.rotation.y = Math.PI/2; }
+
+        balls.forEach(group => {
+            if (time > group.userData.maneuver) {
+                group.userData.vel.x = (Math.random() - 0.5) * 0.4 * speedMul;
+                group.userData.vel.z = (Math.random() - 0.5) * 0.4 * speedMul;
+                group.userData.maneuver = time + 2000 + Math.random()*1500;
+            }
+            const dToP = group.position.distanceTo(player.position);
+            if(dToP > ARENA_SIZE) {
+                const back = new THREE.Vector3().subVectors(player.position, group.position).normalize();
+                group.userData.vel.add(back.multiplyScalar(0.1));
+            }
+            group.userData.vel.clampLength(0, 0.7 * speedMul);
+            group.position.add(group.userData.vel);
+            group.position.y = 2 + Math.sin(time * 0.003) * 0.7;
+        });
+
+        camera.position.lerp(new THREE.Vector3(player.position.x, 50, player.position.z + 40), 0.1);
+        camera.lookAt(player.position);
+        renderer.render(scene, camera);
+    }
+
+    nextQuestion();
+    animate();
+</script>
+</body>
+</html>
