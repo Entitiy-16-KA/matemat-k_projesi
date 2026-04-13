@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Matematik Projesi (Kuş Bakışı)</title>
+    <title>Matematik Projesi - Tekrarsız Sorular</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Poppins', sans-serif; background: #87CEEB; user-select: none; }
         #ui-layer {
@@ -16,12 +16,15 @@
             border: 4px solid #8A2BE2; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
             font-weight: 800;
         }
-        /* WASD BUTONLARI */
         #controls-wrapper {
-            position: absolute; bottom: 30px; left: 50%;
-            transform: translateX(-50%); display: grid;
+            position: absolute; bottom: 20px; left: 50%;
+            transform: translateX(-50%); display: flex;
+            flex-direction: column; align-items: center; gap: 10px; z-index: 20;
+        }
+        .wasd-grid {
+            display: grid;
             grid-template-areas: ". w ." "a s d";
-            gap: 10px; z-index: 20;
+            gap: 10px;
         }
         .control-btn {
             width: 60px; height: 60px; background: rgba(138, 43, 226, 0.7);
@@ -30,7 +33,14 @@
             font-weight: bold; font-size: 20px; cursor: pointer;
             pointer-events: auto; transition: 0.2s;
         }
-        .control-btn:active { background: #8A2BE2; transform: scale(0.9); }
+        #jump-btn {
+            width: 200px; height: 45px; background: rgba(255, 68, 68, 0.8);
+            color: white; border: 2px solid white; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 16px; cursor: pointer;
+            pointer-events: auto; transition: 0.2s;
+        }
+        .control-btn:active, #jump-btn:active { background: #8A2BE2; transform: scale(0.9); }
         #btn-w { grid-area: w; } #btn-a { grid-area: a; }
         #btn-s { grid-area: s; } #btn-d { grid-area: d; }
 
@@ -54,14 +64,18 @@
 </div>
 
 <div id="controls-wrapper">
-    <div id="btn-w" class="control-btn">W</div>
-    <div id="btn-a" class="control-btn">A</div>
-    <div id="btn-s" class="control-btn">S</div>
-    <div id="btn-d" class="control-btn">D</div>
+    <div class="wasd-grid">
+        <div id="btn-w" class="control-btn">W</div>
+        <div id="btn-a" class="control-btn">A</div>
+        <div id="btn-s" class="control-btn">S</div>
+        <div id="btn-d" class="control-btn">D</div>
+    </div>
+    <div id="jump-btn">SPACE</div>
 </div>
 
 <div id="win-screen">
     <h1>EFSANEVİ BİTİŞ! 🏆</h1>
+    <p>Tüm soruları hiç tekrara düşmeden çözdün!</p>
     <button onclick="location.reload()" style="padding:15px 30px; cursor:pointer; border-radius:10px;">YENİDEN BAŞLA</button>
 </div>
 
@@ -73,19 +87,43 @@
     import * as THREE from 'three';
 
     let score = 0;
-    const maxScore = 10;
-    let speedMul = 0.35; // Daha yavaş başlangıç
+    const maxScore = 20;
+    let speedMul = 0.35;
     let currentQuestion = {};
     let balls = [];
     const ARENA_SIZE = 45;
+    
+    // Zıplama
+    let velocityY = 0;
+    const gravity = -0.02;
+    const jumpStrength = 0.5;
+    let isGrounded = true;
 
     const questions = [
         { q: "10/x = 5/4 ise x kaçtır?", a: 8, options: [8, 6, 12, 10] },
         { q: "2 kg elma 40 TL ise 6 kg kaç TL?", a: 120, options: [120, 80, 100, 160] },
         { q: "Ters Orantı: 3 kişi 8 günde bitirirse, 6 kişi kaç günde?", a: 4, options: [4, 16, 2, 8] },
         { q: "Ölçek 1/200. 5 cm gerçekte kaç METRE?", a: 10, options: [10, 100, 1, 20] },
-        { q: "Doğru Orantı: x=3 iken y=9 ise x=7 iken y kaçtır?", a: 21, options: [21, 14, 28, 18] }
+        { q: "Doğru Orantı: x=3 iken y=9 ise x=7 iken y kaçtır?", a: 21, options: [21, 14, 28, 18] },
+        { q: "4 musluk havuzu 12 saatte doldurursa, 8 musluk kaç saatte?", a: 6, options: [6, 24, 3, 12] },
+        { q: "Saatte 80 km giden araç 3 saatte kaç km gider?", a: 240, options: [240, 160, 320, 200] },
+        { q: "5 tanesi 15 TL olan kalemlerin 12 tanesi kaç TL?", a: 36, options: [36, 30, 45, 40] },
+        { q: "Bir tarlayı 2 traktör 10 günde sürerse, 5 traktör kaç günde?", a: 4, options: [4, 25, 2, 10] },
+        { q: "1/1.000.000 ölçekte 4 cm, gerçekte kaç KM'dir?", a: 40, options: [40, 4, 400, 1] },
+        { q: "20 L sütten 4 kg peynir çıkarsa, 10 kg peynir için kaç L süt?", a: 50, options: [50, 40, 60, 100] },
+        { q: "Araç 100 km'de 6 L yakıyorsa, 500 km'de kaç L yakar?", a: 30, options: [30, 24, 36, 45] },
+        { q: "12 işçi bir işi 15 günde yaparsa, 18 işçi kaç günde yapar?", a: 10, options: [10, 20, 12, 15] },
+        { q: "x ve y ters orantılıdır. x=4 iken y=9 ise, x=6 iken y kaçtır?", a: 6, options: [6, 12, 4, 8] },
+        { q: "Boyu 1.5m olanın gölgesi 0.5m ise, gölgesi 2m olan ağaç kaç m?", a: 6, options: [6, 4, 3, 5] },
+        { q: "8 tanesi 64 TL olan çorapların 3 tanesi kaç TL?", a: 24, options: [24, 16, 32, 28] },
+        { q: "90 km/s ile 4 saatte gidilen yol, 60 km/s ile kaç saatte?", a: 6, options: [6, 8, 4, 5] },
+        { q: "Haritada 2 cm mesafe 10 km ise, 7 cm kaç km'dir?", a: 35, options: [35, 70, 14, 20] },
+        { q: "Yarım kg kıyma 150 TL ise, 2 kg kıyma kaç TL?", a: 600, options: [600, 300, 450, 750] },
+        { q: "Bir duvarı 10 usta 12 günde örerse, 15 usta kaç günde örer?", a: 8, options: [8, 18, 6, 10] }
     ];
+
+    // Kullanılmamış soruları takip eden liste
+    let availableQuestions = [...questions];
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
@@ -116,7 +154,6 @@
     player.add(pBody);
     scene.add(player);
 
-    // Uzun Ağaçlar
     for(let i=0; i<300; i++) {
         const tree = new THREE.Group();
         const h = 20 + Math.random()*25;
@@ -139,10 +176,9 @@
                 new THREE.SphereGeometry(1.6, 32, 32),
                 new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x220000 })
             );
-            ball.name = "targetBall"; // Tıklama için isim
+            ball.name = "targetBall";
             group.add(ball);
 
-            // HD Sayı Yazısı
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             canvas.width = 512; canvas.height = 512;
@@ -152,7 +188,7 @@
             
             const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
             sprite.position.y = 3.5; sprite.scale.set(4, 4, 1);
-            sprite.name = "targetBall"; // Yazıya da tıklanabilsin
+            sprite.name = "targetBall";
             group.add(sprite);
 
             const dist = 20 + Math.random()*15;
@@ -171,51 +207,41 @@
     }
 
     function nextQuestion() {
-        if (score >= maxScore) {
+        if (score >= maxScore || availableQuestions.length === 0) {
             document.getElementById('win-screen').style.display = 'flex';
             return;
         }
-        currentQuestion = questions[Math.floor(Math.random() * questions.length)];
+
+        // Rastgele bir indeks seç ve listeden çıkart (Böylece bir daha sorulmaz)
+        const randomIndex = Math.floor(Math.random() * availableQuestions.length);
+        currentQuestion = availableQuestions.splice(randomIndex, 1)[0];
+        
         document.getElementById('question-box').innerText = currentQuestion.q;
         createBalls();
     }
 
-    // TIKLAMA SİSTEMİ (GELİŞTİRİLDİ)
     const raycaster = new THREE.Raycaster();
     const onMouseDown = (e) => {
-        // Butonlara tıklanıyorsa oyun tıklamasını engelle
-        if (e.target.closest('.control-btn')) return;
-
-        const mouse = new THREE.Vector2(
-            (e.clientX / window.innerWidth) * 2 - 1,
-            -(e.clientY / window.innerHeight) * 2 + 1
-        );
-
+        if (e.target.closest('.control-btn') || e.target.id === 'jump-btn') return;
+        const mouse = new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
         raycaster.setFromCamera(mouse, camera);
-        // Tüm hiyerarşiyi (recursive: true) kontrol et
         const intersects = raycaster.intersectObjects(balls, true);
-        
         if(intersects.length > 0) {
-            let hitObject = intersects[0].object;
-            // Grubun içindeki en üst ebeveyne (Group) ulaşana kadar çık
-            let root = hitObject;
-            while (root.parent && !root.userData.value) {
-                root = root.parent;
-            }
-
+            let root = intersects[0].object;
+            while (root.parent && !root.userData.value) root = root.parent;
             if(root.userData.value === currentQuestion.a) {
-                score++; speedMul += 0.15; nextQuestion();
+                score++; speedMul += 0.05; nextQuestion();
             } else {
                 score = Math.max(0, score - 0.5);
             }
             document.getElementById('progress-bar').style.width = (score/maxScore*100) + "%";
         }
     };
-
     window.addEventListener('mousedown', onMouseDown);
 
-    // KONTROLLER
     const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+    const jump = () => { if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } };
+
     const setupBtn = (id, key) => {
         const btn = document.getElementById(id);
         btn.onmousedown = btn.ontouchstart = (e) => { e.preventDefault(); keys[key] = true; };
@@ -224,7 +250,12 @@
     setupBtn('btn-w', 'KeyW'); setupBtn('btn-a', 'KeyA');
     setupBtn('btn-s', 'KeyS'); setupBtn('btn-d', 'KeyD');
 
-    window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.code)) keys[e.code] = true; });
+    document.getElementById('jump-btn').onmousedown = document.getElementById('jump-btn').ontouchstart = (e) => { e.preventDefault(); jump(); };
+
+    window.addEventListener('keydown', (e) => { 
+        if(keys.hasOwnProperty(e.code)) keys[e.code] = true; 
+        if(e.code === 'Space') jump();
+    });
     window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.code)) keys[e.code] = false; });
 
     function animate() {
@@ -237,16 +268,18 @@
         if (keys.KeyA) { player.position.x -= moveSpeed; player.rotation.y = -Math.PI/2; }
         if (keys.KeyD) { player.position.x += moveSpeed; player.rotation.y = Math.PI/2; }
 
+        player.position.y += velocityY;
+        if (!isGrounded) velocityY += gravity;
+        if (player.position.y <= 0) { player.position.y = 0; velocityY = 0; isGrounded = true; }
+
         balls.forEach(group => {
             if (time > group.userData.maneuver) {
                 group.userData.vel.x = (Math.random() - 0.5) * 0.4 * speedMul;
                 group.userData.vel.z = (Math.random() - 0.5) * 0.4 * speedMul;
                 group.userData.maneuver = time + 2000 + Math.random()*1500;
             }
-            const dToP = group.position.distanceTo(player.position);
-            if(dToP > ARENA_SIZE) {
-                const back = new THREE.Vector3().subVectors(player.position, group.position).normalize();
-                group.userData.vel.add(back.multiplyScalar(0.1));
+            if(group.position.distanceTo(player.position) > ARENA_SIZE) {
+                group.userData.vel.add(new THREE.Vector3().subVectors(player.position, group.position).normalize().multiplyScalar(0.1));
             }
             group.userData.vel.clampLength(0, 0.7 * speedMul);
             group.position.add(group.userData.vel);
